@@ -81,23 +81,37 @@ STATE_VERSION=2
 REMOTE_TMP_DIR="$REMOTE_PATH/$DOT_DIR/tmp"
 HOSTNAME="$(hostname)"
 
-# Don't sync user excluded files
-if [[ -f "$DOT_DIR/exclude" ]]; then
-  user_exclude="--exclude-from $DOT_DIR/exclude"
-fi
+# Temp files used, deleted at the end of the script
+tmp_bitignore_files=""
 
-# Specify certain files to include
-if [[ -f "$DOT_DIR/include" ]]; then
-  user_include="--include-from $DOT_DIR/include"
-fi
+# Don't sync user ignored files
+shopt -s globstar
+for bitignore in **/.bitignore; do
+  
+  # Check that file actually exists
+  if [[ -f $bitignore ]]; then
 
-# Specify rsync filter rules
-if [[ -f "$DOT_DIR/filter" ]]; then
-  # The underscore (_) is required for correct operation
-  user_filter="--filter merge_$DOT_DIR/filter"
-fi
+	# Prepend relative dir
+	tmp_bitignore=$(mktemp --tmpdir=$TMP_DIR)
+	rel_dir=$(dirname $bitignore)
+	if [ $rel_dir == "." ]
+	  # Prepending current folder '.' causes problem
+	  # thus in this case, don't prepend anything
+	  # just copy
+	  then cp $bitignore $tmp_bitignore
+	  else sed -e "s:^:$rel_dir/:" $bitignore > $tmp_bitignore
+	fi
 
-USER_RULES="$user_filter $user_include $user_exclude"
+	# Add to list of temp bitignore files
+	tmp_bitignore_files="$tmp_bitignore_files $tmp_bitignore"
+
+	# Add to exclude file list
+    user_exclude="$user_exclude --exclude-from $tmp_bitignore"
+  fi
+done
+shopt -u globstar
+
+USER_RULES="$user_exclude"
 
 TIMESTAMP=$(date "+%Y-%m-%d.%H%M%S")
 
@@ -821,3 +835,8 @@ case ${COMMANDS[0]} in
     help)       usage;;
     sync)       sync;;
 esac
+
+# Remove temp bitignore files
+if [[ -n $tmp_bitignore_files ]]; then
+  rm $tmp_bitignore_files
+fi
